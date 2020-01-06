@@ -80,17 +80,31 @@ Also, the CMD line of Dockerfile should be changed from: `CMD ["npm", "run", "st
 
 ## Seed the database
 
-To be able to use the functionality of this service an initial admin user is required, so he/she can create new aid-worker/admin users and programs. This initial user and schema can be created by running seed script.
+Upon application start, automatically a basic seed-script is run which adds 1 admin-user and 1 aidworker-user. It will only do so, if no existing users are found. The password and username for these users can be customized in `secrets.ts`
 
-To seed the database for dev mode with an admin and some initial testing values run the following command (make sure that application is running: `npm run start:dev` before seeding):
+To seed the database with more data (e.g. programs) additional seed-scripts can be run manually.  
+**NOTE:** These seed-scripts delete _all existing data_. They cannot be run on production; When run locally or on test-environment, you are prompted with '`Are you sure? (y/n)`'.
 
-    docker exec -i 121-service npm run seed:dev
+- For basic testing:  
+  `docker exec -it 121-service npm run seed:mvp`
 
-To seed it for production run the following command (the appilcation does not have to be running for this):
+- Include more testing data:  
+  `docker exec -it 121-service npm run seed:dev`
 
-    docker exec -i 121-service npm run seed
+- For pilot March 2020:  
+  `docker exec -it 121-service npm run seed:pilot`
 
-This user password and username can be customized in `secrets.ts`
+## Database migrations
+
+During product development it sometimes happens that the database-structure changes (e.g. an extra column in a table), while there is already production-data stored that cannot be lost. In this case we have to apply a migration.
+
+Any time, the database-structure is adapted, before pushing, run:
+`docker exec -it 121-service npm run migration:generate <name>`
+
+This stores all edits in a migration-file, which is pushed along with your code.
+On test- and production-server, this file is automatically run within the 'npm prestart' command.
+To run this file locally, do:
+`docker exec -it 121-service npm run migration:run`
 
 ## How to use Swagger (with authorization features)
 

@@ -1,3 +1,4 @@
+import { FundingOverview } from './../../funding/dto/funding-overview.dto';
 import { DidDto } from './dto/did.dto';
 import {
   Get,
@@ -23,11 +24,11 @@ import {
   ApiImplicitQuery,
 } from '@nestjs/swagger';
 import { ProgramEntity } from './program.entity';
-import { FundsEntity } from './funds.entity';
 import { DeleteResult } from 'typeorm';
 import { IncludeMeDto } from './dto/include-me.dto';
 import { InclusionStatus } from './dto/inclusion-status.dto';
 import { InclusionRequestStatus } from './dto/inclusion-request-status.dto';
+import { PayoutDto } from './dto/payout.dto';
 
 @ApiUseTags('programs')
 @Controller('programs')
@@ -51,7 +52,7 @@ export class ProgramController {
   @ApiImplicitParam({ name: 'id', required: true })
   @ApiResponse({ status: 200, description: 'Return funds by program id.' })
   @Get('funds/:id')
-  public async getFunds(@Param() params): Promise<FundsEntity> {
+  public async getFunds(@Param() params): Promise<FundingOverview> {
     return await this.programService.getFunds(params.id);
   }
 
@@ -160,6 +161,28 @@ export class ProgramController {
       params.programId,
       data.did,
     );
+  }
+
+  @ApiOperation({ title: 'Sent payout instruction to financial service provider' })
+  @Post('payout')
+  public async payout(
+    @Body() data: PayoutDto,
+  ): Promise<any> {
+    return await this.programService.payout(
+      data.programId,
+      data.amount,
+    );
+  }
+
+  @ApiOperation({ title: 'Get total number of included per program' })
+  @ApiImplicitParam({ name: 'programId', required: true, type: 'integer' })
+  @ApiResponse({
+    status: 200,
+    description: 'Total number of included per program',
+  })
+  @Get('total-included/:programId')
+  public async getTotalIncluded(@Param() param): Promise<number> {
+    return await this.programService.getTotalIncluded(param.programId);
   }
 
 }

@@ -1,12 +1,21 @@
+import { FundingOverview } from './../../funding/dto/funding-overview.dto';
+import { FundingService } from './../../funding/funding.service';
+import { TransactionEntity } from './transactions.entity';
 import { VoiceService } from './../../notifications/voice/voice.service';
 import { SchemaService } from './../../sovrin/schema/schema.service';
 import { CredentialService } from './../../sovrin/credential/credential.service';
 import { ProofService } from './../../sovrin/proof/proof.service';
 import { ConnectionEntity } from './../../sovrin/create-connection/connection.entity';
 import { CustomCriterium } from './custom-criterium.entity';
-import { Injectable, HttpException, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  HttpException,
+  Inject,
+  forwardRef,
+  HttpService,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, getRepository, DeleteResult } from 'typeorm';
+import { Repository, getRepository, DeleteResult, Like } from 'typeorm';
 import { ProgramEntity } from './program.entity';
 import { UserEntity } from '../../user/user.entity';
 import { CreateProgramDto } from './dto';
@@ -17,7 +26,7 @@ import { InclusionRequestStatus } from './dto/inclusion-request-status.dto';
 import { FinancialServiceProviderEntity } from './financial-service-provider.entity';
 import { ProtectionServiceProviderEntity } from './protection-service-provider.entity';
 import { SmsService } from '../../notifications/sms/sms.service';
-import { FundsEntity } from './funds.entity';
+import { API } from '../../config';
 
 @Injectable()
 export class ProgramService {
@@ -30,13 +39,18 @@ export class ProgramService {
   @InjectRepository(CustomCriterium)
   public customCriteriumRepository: Repository<CustomCriterium>;
   @InjectRepository(FinancialServiceProviderEntity)
-  public financialServiceProviderRepository: Repository<FinancialServiceProviderEntity>;
+  public financialServiceProviderRepository: Repository<
+    FinancialServiceProviderEntity
+  >;
   @InjectRepository(ProtectionServiceProviderEntity)
-  public protectionServiceProviderRepository: Repository<ProtectionServiceProviderEntity>;
-  @InjectRepository(FundsEntity)
-  public fundsRepository: Repository<FundsEntity>;
+  public protectionServiceProviderRepository: Repository<
+    ProtectionServiceProviderEntity
+  >;
+  @InjectRepository(TransactionEntity)
+  public transactionRepository: Repository<TransactionEntity>;
 
   public constructor(
+    private readonly httpService: HttpService,
     @Inject(forwardRef(() => CredentialService))
     private readonly credentialService: CredentialService,
     private readonly voiceService: VoiceService,
@@ -44,14 +58,18 @@ export class ProgramService {
     private readonly smsService: SmsService,
     private readonly schemaService: SchemaService,
     @Inject(forwardRef(() => ProofService))
-    private readonly proofService: ProofService
-  ) { }
+    private readonly proofService: ProofService,
+    private readonly fundingService: FundingService,
+  ) {}
 
   public async findOne(where): Promise<ProgramEntity> {
     const qb = await getRepository(ProgramEntity)
       .createQueryBuilder('program')
       .leftJoinAndSelect('program.customCriteria', 'customCriterium')
-      .leftJoinAndSelect('program.financialServiceProviders', 'financialServiceProvider')
+      .leftJoinAndSelect(
+        'program.financialServiceProviders',
+        'financialServiceProvider',
+      )
       .leftJoinAndSelect('program.aidworkers', 'aidworker');
     qb.whereInIds([where]);
     const program = qb.getOne();
@@ -147,7 +165,6 @@ export class ProgramService {
       await this.financialServiceProviderRepository.save(fsp);
     }
     for (let item of programData.protectionServiceProviders) {
-      console.log('item: ', item);
       let psp = await this.protectionServiceProviderRepository.findOne({
         relations: ['program'],
         where: { id: item.id },
@@ -265,7 +282,9 @@ export class ProgramService {
       throw new HttpException({ errors }, 404);
     }
 
-    let program = await this.programRepository.findOne(programId, { relations: ["customCriteria"] });
+    let program = await this.programRepository.findOne(programId, {
+      relations: ['customCriteria'],
+    });
     if (!program) {
       const errors = 'Program not found.';
       throw new HttpException({ errors }, 404);
@@ -279,10 +298,7 @@ export class ProgramService {
 
     let inclusionRequestStatus: InclusionRequestStatus;
 
-    const questionAnswerList = this.createQuestionAnswerList(
-      program,
-      proof,
-    )
+    const questionAnswerList = this.createQuestionAnswerList(program, proof);
     connection.customData = this.getPersitentDataFromProof(
       connection.customData,
       questionAnswerList,
@@ -290,14 +306,22 @@ export class ProgramService {
     );
 
     // For now always minimum-score approach: this will need to be split for the pilot
-    if (program.inclusionCalculationType === 'minimumScore' || program.inclusionCalculationType === 'highestScoresX') {
+    if (
+      program.inclusionCalculationType === 'minimumScore' ||
+      program.inclusionCalculationType === 'highestScoresX'
+    ) {
       let inclusionResult: boolean = await this.calculateInclusion(
         program,
         questionAnswerList,
       );
       if (inclusionResult) {
         connection.programsIncluded.push(programId);
-        this.smsService.notifyBySms(connection.phoneNumber, connection.preferredLanguage, 'included', programId);
+        this.smsService.notifyBySms(
+          connection.phoneNumber,
+          connection.preferredLanguage,
+          'included',
+          programId,
+        );
         this.voiceService.notifyByVoice(
           connection.phoneNumber,
           connection.preferredLanguage,
@@ -360,13 +384,10 @@ export class ProgramService {
     return inclusionStatus;
   }
 
-
-
   public async calculateInclusion(
     program: ProgramEntity,
     questionAnswerList: object,
   ): Promise<boolean> {
-
     // Calculates the score based on the ctritria of a program and the aggregrated score list
     const totalScore = this.calculateScoreAllCriteria(
       program.customCriteria,
@@ -382,8 +403,6 @@ export class ProgramService {
     program: ProgramEntity,
     proof: string,
   ): object {
-
-
     // Convert the proof in an array, for some unknown reason it has to be JSON parse multiple times
     const proofJson = JSON.parse(proof);
     const proofObject = JSON.parse(proofJson['proof']);
@@ -392,7 +411,6 @@ export class ProgramService {
     // Uses the proof request to relate the revealed_attr from the proof to the corresponding ctriteria'
     const proofRequest = JSON.parse(program.proofRequest);
     const attrRequest = proofRequest['requested_attributes'];
-
 
     const inclusionCriteriaAnswers = {};
     for (let attrKey in revealedAttrProof) {
@@ -454,39 +472,135 @@ export class ProgramService {
     return score;
   }
 
-  private getPersitentDataFromProof(customData: Object, questionAnswerList: Object, programCriteria: CustomCriterium[]): any {
+  private getPersitentDataFromProof(
+    customData: Object,
+    questionAnswerList: Object,
+    programCriteria: CustomCriterium[],
+  ): any {
     for (let criterium of programCriteria) {
       if (criterium.persistence) {
-        let criteriumName = criterium.criterium
-        customData[criteriumName] = questionAnswerList[criteriumName]
+        let criteriumName = criterium.criterium;
+        customData[criteriumName] = questionAnswerList[criteriumName];
       }
     }
-    return customData
+    return customData;
+  }
+  public async getTotalIncluded(programId): Promise<number> {
+    const includedConnections = await this.getIncludedConnections(programId);
+    return includedConnections.length;
   }
 
-  public async getFunds(programId: number): Promise<any> {
-    // TO DO: call Disberse-API here, for now static data.
-    const fundsDisberse = {
-      totalFunds: 1000,
-      transferredFunds: 400
-    };
+  public async payout(programId: number, amount: number) {
+    let program = await this.programRepository.findOne(programId, {
+      relations: ['financialServiceProviders'],
+    });
+    if (!program || !program.published) {
+      const errors = 'Program not found.';
+      throw new HttpException({ errors }, 404);
+    }
 
-    const program = await this.programRepository.findOne({ where: { id: programId } });
+    const includedConnections = await this.getIncludedConnections(programId);
+
+    if (includedConnections.length < 1) {
+      return { status: 'error', message: 'There are no included PA for this program' }
+    }
+
+    const fundingOverview = await this.fundingService.getProgramFunds(
+      programId,
+    );
+    const fundsNeeded = amount * includedConnections.length;
+    if (fundsNeeded > fundingOverview.totalAvailable) {
+      return { status: 'error', message: 'Insufficient funds' }
+    }
+
+    for (let fsp of program.financialServiceProviders) {
+      await this.createSendPaymentListFsp(
+        fsp,
+        includedConnections,
+        amount,
+        program,
+      );
+    }
+    return { status: 'succes', message: 'Send instructions to FSP' }
+  }
+
+  private async getIncludedConnections(
+    programId: number,
+  ): Promise<ConnectionEntity[]> {
+    const connections = await this.connectionRepository.find( {relations: ['fsp']})
+    const includedConnections = [];
+    for (let connection of connections) {
+      if (connection.programsIncluded.includes(+programId)) {
+        includedConnections.push(connection);
+      }
+    }
+    return includedConnections;
+  }
+
+  private async createSendPaymentListFsp(
+    fsp: FinancialServiceProviderEntity,
+    includedConnections: ConnectionEntity[],
+    amount: number,
+    program: ProgramEntity,
+  ) {
+    const paymentList = [];
+    const connectionsForFsp = [];
+    for (let connection of includedConnections) {
+      if (connection.fsp.id === fsp.id) {
+        let paymentDetails = {
+          // phone: connection.phoneNumber,
+          id_details: connection.customData['id_number'],
+          amount: amount,
+        };
+        paymentList.push(paymentDetails);
+        connectionsForFsp.push(connection);
+      }
+    }
+
+    const fspAiSelected = API.fsp.find(obj => obj.name == fsp.fsp);
+
+    if (paymentList.length > 0) {
+      const response = await this.httpService
+        .post(fspAiSelected.payout, paymentList)
+        .toPromise();
+      if (!response.data) {
+        const errors = 'Payment instruction not send';
+        throw new HttpException({ errors }, 404);
+      }
+      for (let connection of connectionsForFsp) {
+        this.storeTransaction(amount, connection, fsp, program);
+      }
+    }
+  }
+  private storeTransaction(
+    amount: number,
+    connection: ConnectionEntity,
+    fsp: FinancialServiceProviderEntity,
+    program: ProgramEntity,
+  ) {
+    const transaction = new TransactionEntity();
+    transaction.amount = amount;
+    transaction.created = new Date();
+    transaction.connection = connection;
+    transaction.financialServiceProvider = fsp;
+    transaction.program = program;
+    transaction.status = 'send-order';
+
+    this.transactionRepository.save(transaction);
+  }
+
+  public async getFunds(programId: number): Promise<FundingOverview> {
+    // TO DO: call Disberse-API here, for now static data.
+
+    const program = await this.programRepository.findOne({
+      where: { id: programId },
+    });
     if (!program) {
       const errors = 'Program not found.';
       throw new HttpException({ errors }, 404);
     }
-    let funds = await this.fundsRepository.findOne({ where: { program: { id: programId } } });
-    if (!funds) {
-      funds = new FundsEntity();
-    }
-    funds.totalFunds = fundsDisberse.totalFunds;
-    funds.transferredFunds = fundsDisberse.transferredFunds;
-    funds.availableFunds = fundsDisberse.totalFunds - fundsDisberse.transferredFunds;
-    funds.program = program;
-    await this.fundsRepository.save(funds);
 
-    return this.fundsRepository.findOne({ select: ["totalFunds", "transferredFunds", "availableFunds", "timestamp"], where: { program: { id: programId } } });
+    const fundsDisberse = await this.fundingService.getProgramFunds(programId);
+    return fundsDisberse
   }
-
 }

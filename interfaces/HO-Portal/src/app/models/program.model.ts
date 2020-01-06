@@ -3,6 +3,8 @@ export class Program {
   title: string;
   description: string;
   countryId: number;
+  currency: string;
+  fixedTransferValue: number;
   created: string;
   updated: string;
   author: object;

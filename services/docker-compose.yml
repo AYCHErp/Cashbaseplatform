@@ -23,6 +23,7 @@ services:
     networks:
       pool_network:
         ipv4_address: 11.0.0.2
+    restart: unless-stopped
   tyknims:
     build: 
       context: tykn-ssi-services/TyknIMS  
@@ -31,6 +32,7 @@ services:
     container_name: tyknims
     volumes:
       - "./tykn-ssi-services/TyknIMS/wallet-volume:/tmp/.indy_client/wallet"
+      - "./logs-volume:/var/log/tyknims"
     ports:
       - "50001:50001"
     networks:
@@ -42,6 +44,7 @@ services:
       - indypool
     links:
       - indypool
+    restart: unless-stopped
   orgims:
     build:
       context: tykn-ssi-services/OrgIMS  
@@ -52,11 +55,12 @@ services:
     container_name: orgims
     volumes:
       - "./tykn-ssi-services/OrgIMS/wallet-volume:/tmp/wallet"
+      - "./logs-volume:/var/log/orgims"
     ports:
       - "50002:50002"
     healthcheck:
       test: "exit 0"
-    restart: on-failure
+    restart: unless-stopped
     networks:
       pool_network:
         ipv4_address: 11.0.0.4
@@ -66,7 +70,7 @@ services:
     links:
       - indypool
       - tyknims
-    restart: on-failure
+    restart: unless-stopped
   userims:
     build: 
       context: tykn-ssi-services/UserIMS 
@@ -75,6 +79,7 @@ services:
     container_name: userims
     volumes:
       - "./tykn-ssi-services/UserIMS/wallet-volume:/tmp/.indy_client"
+      - "./logs-volume:/var/log/userims"
     healthcheck:
       test: "exit 0"
     restart: on-failure
@@ -88,6 +93,7 @@ services:
       - tyknims
     links:
       - indypool
+    restart: unless-stopped
   121db:
     image: "postgres:9.6"
     init: true
@@ -105,6 +111,7 @@ services:
     networks:
       pool_network:
         ipv4_address: 11.0.0.6
+    restart: unless-stopped
   121-service:
     build: 
       context: 121-service
@@ -120,6 +127,7 @@ services:
     networks:
       pool_network:
         ipv4_address: 11.0.0.7
+    restart: unless-stopped
   PA-accounts-service:
     build:
       context: PA-accounts-service
@@ -136,6 +144,7 @@ services:
     networks:
       pool_network:
         ipv4_address: 11.0.0.8
+    restart: unless-stopped
 
 networks:
   pool_network:
