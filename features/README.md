@@ -3,32 +3,34 @@ Features
 
 <!-- TOC: -->
 - [All features / scenario's](#all-features--scenarios)
-  - [For Humanitarian Organization (HO)](#for-humanitarian-organization-ho)
-  - [For Person/People Affected (PA)](#for-personpeople-affected-pa)
-  - [For Aid-Worker (AW)](#for-aid-worker-aw)
+  - [For Humanitarian Organization (HO-Portal)](#for-humanitarian-organization-ho-portal)
+  - [For Person/People Affected (PA-App)](#for-personpeople-affected-pa-app)
+  - [For Aid-Worker (AW-App)](#for-aid-worker-aw-app)
 - [Reference](#reference)
 - [Tools](#tools)
 - [How to describe features / define scenarios](#how-to-describe-features--define-scenarios)
 
 ---
 
+## All features / scenario's
 Features of the 121-platform are described in this folder in a standardizes way using the [Gherkin-language](https://cucumber.io/docs/gherkin/).
 
-They are grouped by their (most important) actor.
-
----
-
-## All features / scenario's
-
-### For Humanitarian Organization (HO)
-1. [View funds overview](View_funds_overview.feature)
-2. [Send payment instructions](Send_payment_instructions.feature)
+### For Humanitarian Organization (HO-Portal)
+- [View funds overview](HO-Portal/View_funds_overview.feature)
+- [Send payment instructions](HO-Portal/Send_payment_instructions.feature)
+- [Manage people enrolled](HO-Portal/Manage_people_enrolled.feature)
+- [Manage people in/excluded](HO-Portal/Manage_people_in_or_excluded.feature)
 
 
-### For Person/People Affected (PA)
+### For Person/People Affected (PA-App)
+- [Create Digital ID](PA-App/Create_Digital_ID.feature)
+- [Use existing Digital ID](PA-App/Use_existing_Digital_ID.feature)
+- [Verify password input](PA-App/Verify_password_input.feature)
+- [Fill payment details](PA-App/Fill_payment_details.feature)
+- [Verify phone number input](PA-App/Verify_phone_number_input.feature)
 
 
-### For Aid-Worker (AW)
+### For Aid-Worker (AW-App)
 
 
 ---

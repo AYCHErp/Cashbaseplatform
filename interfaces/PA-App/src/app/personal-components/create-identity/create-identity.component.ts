@@ -85,6 +85,7 @@ export class CreateIdentityComponent extends PersonalComponent {
         this.complete();
       },
       (error) => {
+        this.conversationService.stopLoading();
         if (error.status === 400) {
           this.usernameNotUnique = true;
           this.isInProgress = false;

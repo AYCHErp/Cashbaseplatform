@@ -12,10 +12,10 @@
         <ion-icon name="arrow-back"></ion-icon>
       </ion-button>
     </ion-buttons>
-    <ion-title *ngIf="!privacy">
+    <ion-title *ngIf="!showSensitiveData">
       {{ 'page.programs.program-people.pageTitle'|translate }}
     </ion-title>
-    <ion-title *ngIf="privacy">
+    <ion-title *ngIf="showSensitiveData">
       {{ 'page.programs.program-people.pageTitlePrivacy'|translate }}
     </ion-title>
   </ion-toolbar>
@@ -23,10 +23,10 @@
 
 
 <ion-content class="ion-padding">
-  <p *ngIf="noConnections">
+  <p *ngIf="!enrolledPeople?.length && !showSensitiveData">
     {{ 'page.programs.program-people.noConnections'|translate }}
   </p>
-  <p *ngIf="noConnectionsPrivacy">
+  <p *ngIf="!enrolledPeople?.length && showSensitiveData">
     {{ 'page.programs.program-people.noConnectionsPrivacy'|translate }}
   </p>
 
@@ -45,13 +45,27 @@
                  [rows]="enrolledPeople"
                  [selected]="selectedPeople"
                  [messages]="tableMessages"
+                 (select)="updateSubmitWarning()"
   ></ngx-datatable>
 
-  <ion-button (click)="submitInclusion()"
-              [disabled]="!enrolledPeople.length"
-              class="ion-float-end"
+  <confirm-prompt [disabled]="!enrolledPeople.length"
+                  (confirm)="submitInclusion()"
+                  [subHeader]="'page.programs.program-people.submit-warningPrivacy'|translate"
+                  [message]="submitWarning.message"
+                  class="ion-float-end"
+                  *ngIf="showSensitiveData"
+  >
+    {{ 'page.programs.program-people.submitPrivacy'|translate }}
+  </confirm-prompt>
+
+  <confirm-prompt [disabled]="!enrolledPeople.length"
+                  (confirm)="submitInclusion()"
+                  [subHeader]="'page.programs.program-people.submit-warning'|translate"
+                  [message]="submitWarning.message"
+                  class="ion-float-end"
+                  *ngIf="!showSensitiveData"
   >
     {{ 'page.programs.program-people.submit'|translate }}
-  </ion-button>
+  </confirm-prompt>
 
 </ion-content>

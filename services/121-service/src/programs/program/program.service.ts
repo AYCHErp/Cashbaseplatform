@@ -23,11 +23,10 @@ import { CreateProgramDto } from './dto';
 import { ProgramRO, ProgramsRO, SimpleProgramRO } from './program.interface';
 import { InclusionStatus } from './dto/inclusion-status.dto';
 import { InclusionRequestStatus } from './dto/inclusion-request-status.dto';
-import { FinancialServiceProviderEntity } from './financial-service-provider.entity';
 import { ProtectionServiceProviderEntity } from './protection-service-provider.entity';
 import { SmsService } from '../../notifications/sms/sms.service';
 import { API } from '../../config';
-import { DidDto } from './dto/did.dto';
+import { FinancialServiceProviderEntity } from '../fsp/financial-service-provider.entity';
 
 @Injectable()
 export class ProgramService {
@@ -67,11 +66,12 @@ export class ProgramService {
     const qb = await getRepository(ProgramEntity)
       .createQueryBuilder('program')
       .leftJoinAndSelect('program.customCriteria', 'customCriterium')
+      .leftJoinAndSelect('program.aidworkers', 'aidworker')
       .leftJoinAndSelect(
         'program.financialServiceProviders',
         'financialServiceProvider',
       )
-      .leftJoinAndSelect('program.aidworkers', 'aidworker');
+
     qb.whereInIds([where]);
     const program = qb.getOne();
     return program;
@@ -334,7 +334,7 @@ export class ProgramService {
       inclusionRequestStatus = { status: 'done' };
     } else if (program.inclusionCalculationType === 'highestScoresX') {
 
-      // In this case an inclusion-status can only be given later. 
+      // In this case an inclusion-status can only be given later.
       inclusionRequestStatus = { status: 'pending' };
 
     }
@@ -551,7 +551,7 @@ export class ProgramService {
     return enrolledConnections;
   }
 
-  public async payout(programId: number, amount: number) {
+  public async payout(programId: number, installment: number, amount: number) {
     let program = await this.programRepository.findOne(programId, {
       relations: ['financialServiceProviders'],
     });
@@ -563,7 +563,10 @@ export class ProgramService {
     const includedConnections = await this.getIncludedConnections(programId);
 
     if (includedConnections.length < 1) {
-      return { status: 'error', message: 'There are no included PA for this program' }
+      return {
+        status: 'error',
+        message: 'There are no included PA for this program',
+      };
     }
 
     const fundingOverview = await this.fundingService.getProgramFunds(
@@ -571,7 +574,8 @@ export class ProgramService {
     );
     const fundsNeeded = amount * includedConnections.length;
     if (fundsNeeded > fundingOverview.totalAvailable) {
-      return { status: 'error', message: 'Insufficient funds' }
+      const errors = 'Insufficient funds';
+      throw new HttpException({ errors }, 404);
     }
 
     for (let fsp of program.financialServiceProviders) {
@@ -580,9 +584,10 @@ export class ProgramService {
         includedConnections,
         amount,
         program,
+        installment
       );
     }
-    return { status: 'succes', message: 'Send instructions to FSP' }
+    return { status: 'succes', message: 'Sent instructions to FSP' };
   }
 
   private async getEnrolledConnections(
@@ -602,6 +607,8 @@ export class ProgramService {
           connectionNew = {
             did: connection.did,
             score: connection.inclusionScore,
+            created: connection.created,
+            updated: connection.updated,
           };
           enrolledConnections.push(connectionNew);
         };
@@ -613,6 +620,8 @@ export class ProgramService {
           connectionNew = {
             did: connection.did,
             score: connection.inclusionScore,
+            created: connection.created,
+            updated: connection.updated,
             name: connection.customData['name'],
             dob: connection.customData['dob'],
             included: connection.programsIncluded.includes(+programId)
@@ -627,7 +636,9 @@ export class ProgramService {
   private async getIncludedConnections(
     programId: number,
   ): Promise<ConnectionEntity[]> {
-    const connections = await this.connectionRepository.find({ relations: ['fsp'] });
+    const connections = await this.connectionRepository.find({
+      relations: ['fsp'],
+    });
     const includedConnections = [];
     for (let connection of connections) {
       if (connection.programsIncluded.includes(+programId)) {
@@ -642,6 +653,7 @@ export class ProgramService {
     includedConnections: ConnectionEntity[],
     amount: number,
     program: ProgramEntity,
+    installment: number
   ) {
     const paymentList = [];
     const connectionsForFsp = [];
@@ -668,7 +680,7 @@ export class ProgramService {
         throw new HttpException({ errors }, 404);
       }
       for (let connection of connectionsForFsp) {
-        this.storeTransaction(amount, connection, fsp, program);
+        this.storeTransaction(amount, connection, fsp, program, installment);
       }
     }
   }
@@ -677,6 +689,7 @@ export class ProgramService {
     connection: ConnectionEntity,
     fsp: FinancialServiceProviderEntity,
     program: ProgramEntity,
+    installment: number
   ) {
     const transaction = new TransactionEntity();
     transaction.amount = amount;
@@ -684,9 +697,20 @@ export class ProgramService {
     transaction.connection = connection;
     transaction.financialServiceProvider = fsp;
     transaction.program = program;
-    transaction.status = 'send-order';
+    transaction.installment = installment;
+    transaction.status = 'sent-order';
 
     this.transactionRepository.save(transaction);
+  }
+
+  public async getInstallments(programId: number) {
+    const installments = await this.transactionRepository.createQueryBuilder('transaction')
+      .select("transaction.amount, transaction.installment")
+      .addSelect("MIN(transaction.created)", "installmentDate")
+      .where("transaction.program.id = :programId", { programId: programId })
+      .groupBy("transaction.amount, transaction.installment")
+      .getRawMany();
+    return installments;
   }
 
   public async getFunds(programId: number): Promise<FundingOverview> {
@@ -701,6 +725,13 @@ export class ProgramService {
     }
 
     const fundsDisberse = await this.fundingService.getProgramFunds(programId);
-    return fundsDisberse
+    return fundsDisberse;
+  }
+
+  public async getFspById(id: number): Promise<FinancialServiceProviderEntity> {
+    const fsp = await this.financialServiceProviderRepository.findOne(
+      id, { relations: ["attributes"] }
+    );
+    return fsp;
   }
 }
