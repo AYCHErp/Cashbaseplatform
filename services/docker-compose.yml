@@ -126,7 +126,9 @@ services:
     networks:
       pool_network:
         ipv4_address: 11.0.0.7
-    restart: unless-stopped
+    depends_on:
+      - 121db
+    restart: on-failure
   PA-accounts-service:
     build:
       context: PA-accounts-service
@@ -145,7 +147,9 @@ services:
     networks:
       pool_network:
         ipv4_address: 11.0.0.8
-    restart: unless-stopped
+    depends_on:
+      - 121db
+    restart: on-failure
 
 networks:
   pool_network:

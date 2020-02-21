@@ -1,10 +1,9 @@
-import { UserData } from '../../user/user.interface';
 import { ProgramEntity } from './program.entity';
 
 export interface SimpleProgramRO {
   id: number;
   title: JSON;
-  published: boolean;
+  state: string;
 }
 
 export interface ProgramRO {

@@ -12,6 +12,8 @@ import {
   Controller,
   UseGuards,
   SetMetadata,
+  Res,
+  Header,
 } from '@nestjs/common';
 import { ProgramService } from './program.service';
 import { CreateProgramDto } from './dto';
@@ -36,6 +38,9 @@ import { ConnectionEntity } from 'src/sovrin/create-connection/connection.entity
 import { RolesGuard } from '../../roles.guard';
 import { Roles } from '../../roles.decorator';
 import { UserRole } from '../../user-role.enum';
+import { ChangeStateDto } from './dto/change-state.dto';
+import { PaymentDetailsRequest } from './dto/payment-details-request.dto';
+import { Response } from 'express-serve-static-core';
 
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
@@ -132,17 +137,12 @@ export class ProgramController {
   @Roles(UserRole.ProgramManager)
   @ApiResponse({ status: 403, description: 'Forbidden.' })
   @ApiImplicitParam({ name: 'id', required: true, type: 'number' })
-  @Post('publish/:id')
-  public async publish(@Param() params): Promise<SimpleProgramRO> {
-    return this.programService.publish(params.id);
-  }
-
-  @Roles(UserRole.ProgramManager)
-  @ApiResponse({ status: 403, description: 'Forbidden.' })
-  @ApiImplicitParam({ name: 'id', required: true, type: 'number' })
-  @Post('unpublish/:id')
-  public async unpublish(@Param() params): Promise<SimpleProgramRO> {
-    return this.programService.unpublish(params.id);
+  @Post('changeState/:id')
+  public async changeState(
+    @Param() params,
+    @Body() changeStateData: ChangeStateDto
+  ): Promise<SimpleProgramRO> {
+    return this.programService.changeState(params.id, changeStateData.newState);
   }
 
   @ApiOperation({ title: 'Post proof' })
@@ -213,11 +213,11 @@ export class ProgramController {
   }
 
   @Roles(UserRole.ProgramManager)
-  @ApiOperation({ title: 'Send payout instruction to financial service provider' })
+  @ApiOperation({
+    title: 'Send payout instruction to financial service provider',
+  })
   @Post('payout')
-  public async payout(
-    @Body() data: PayoutDto,
-  ): Promise<any> {
+  public async payout(@Body() data: PayoutDto): Promise<any> {
     return await this.programService.payout(
       data.programId,
       data.installment,
@@ -260,5 +260,23 @@ export class ProgramController {
     @Param() param,
   ): Promise<FinancialServiceProviderEntity> {
     return await this.programService.getFspById(param.fspId);
+  }
+
+  @Roles(UserRole.PrivacyOfficer)
+  @ApiOperation({
+    title: 'Get a list payment details per person to share with officials',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Total number of included per program',
+  })
+  @Post('payment-details')
+  public async getPaymentDetails(
+    @Body() data: PaymentDetailsRequest,
+  ): Promise<any> {
+    return await this.programService.getPaymentDetails(
+      data.programId,
+      data.installment,
+    );
   }
 }

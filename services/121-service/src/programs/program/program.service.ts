@@ -1,3 +1,4 @@
+import { Length } from 'class-validator';
 import { FundingOverview } from './../../funding/dto/funding-overview.dto';
 import { FundingService } from './../../funding/funding.service';
 import { TransactionEntity } from './transactions.entity';
@@ -15,7 +16,7 @@ import {
   HttpService,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, getRepository, DeleteResult, Like } from 'typeorm';
+import { Repository, getRepository, DeleteResult } from 'typeorm';
 import { ProgramEntity } from './program.entity';
 import { UserEntity } from '../../user/user.entity';
 import { CreateProgramDto } from './dto';
@@ -70,7 +71,7 @@ export class ProgramService {
       .leftJoinAndSelect(
         'program.financialServiceProviders',
         'financialServiceProvider',
-      )
+      );
 
     qb.whereInIds([where]);
     const program = qb.getOne();
@@ -193,6 +194,20 @@ export class ProgramService {
     return await this.programRepository.delete(programId);
   }
 
+  public async changeState(programId: number, newState: string): Promise<SimpleProgramRO> {
+    await this.changeProgramValue(programId, {
+      state: newState,
+    });
+    const changedProgram = await this.findOne(programId);
+    if (newState === 'registration') {
+      this.publish(programId);
+    } else if (newState === 'design') {
+      this.unpublish(programId);
+    }
+    return this.buildProgramRO(changedProgram);
+  }
+
+
   public async publish(programId: number): Promise<SimpleProgramRO> {
     const selectedProgram = await this.findOne(programId);
     if (selectedProgram.published == true) {
@@ -251,7 +266,7 @@ export class ProgramService {
     const simpleProgramRO = {
       id: program.id,
       title: program.title,
-      published: program.published,
+      state: program.state
     };
 
     return simpleProgramRO;
@@ -291,12 +306,7 @@ export class ProgramService {
       throw new HttpException({ errors }, 404);
     }
 
-    const validProof = await this.proofService.validateProof(
-      program.proofRequest,
-      proof,
-      did,
-    );
-
+    await this.proofService.validateProof(program.proofRequest, proof, did);
 
     const questionAnswerList = this.createQuestionAnswerList(program, proof);
     connection.customData = this.getPersitentDataFromProof(
@@ -313,7 +323,9 @@ export class ProgramService {
     connection.inclusionScore = totalScore;
 
     // Add to enrolled-array, if not yet present
-    const index = connection.programsEnrolled.indexOf(parseInt(String(programId), 10));
+    const index = connection.programsEnrolled.indexOf(
+      parseInt(String(programId), 10),
+    );
     if (index <= -1) {
       connection.programsEnrolled.push(programId);
     }
@@ -333,10 +345,8 @@ export class ProgramService {
       }
       inclusionRequestStatus = { status: 'done' };
     } else if (program.inclusionCalculationType === 'highestScoresX') {
-
       // In this case an inclusion-status can only be given later.
       inclusionRequestStatus = { status: 'pending' };
-
     }
 
     await this.connectionRepository.save(connection);
@@ -344,7 +354,11 @@ export class ProgramService {
     return inclusionRequestStatus;
   }
 
-  private async notifyInclusionStatus(connection, programId, inclusionResult) {
+  private async notifyInclusionStatus(
+    connection,
+    programId,
+    inclusionResult,
+  ): Promise<void> {
     this.smsService.notifyBySms(
       connection.phoneNumber,
       connection.preferredLanguage,
@@ -391,7 +405,6 @@ export class ProgramService {
   }
 
   public async include(programId: number, dids: object): Promise<void> {
-
     let program = await this.programRepository.findOne(programId);
     if (!program) {
       const errors = 'Program not found.';
@@ -407,23 +420,25 @@ export class ProgramService {
       }
 
       // Add to inclusion-array, if not yet present
-      const indexIn = connection.programsIncluded.indexOf(parseInt(String(programId), 10));
+      const indexIn = connection.programsIncluded.indexOf(
+        parseInt(String(programId), 10),
+      );
       if (indexIn <= -1) {
         connection.programsIncluded.push(programId);
         this.notifyInclusionStatus(connection, programId, true);
       }
       // Remove from exclusion-array, if present
-      const indexEx = connection.programsExcluded.indexOf(parseInt(String(programId), 10));
+      const indexEx = connection.programsExcluded.indexOf(
+        parseInt(String(programId), 10),
+      );
       if (indexEx > -1) {
         connection.programsExcluded.splice(indexEx, 1);
       }
       await this.connectionRepository.save(connection);
     }
-
   }
 
   public async exclude(programId: number, dids: object): Promise<void> {
-
     let program = await this.programRepository.findOne(programId);
     if (!program) {
       const errors = 'Program not found.';
@@ -439,19 +454,22 @@ export class ProgramService {
       }
 
       // Add to exclusion-array, if not yet present
-      const indexEx = connection.programsExcluded.indexOf(parseInt(String(programId), 10));
+      const indexEx = connection.programsExcluded.indexOf(
+        parseInt(String(programId), 10),
+      );
       if (indexEx <= -1) {
         connection.programsExcluded.push(programId);
         this.notifyInclusionStatus(connection, programId, false);
       }
       // Remove from inclusion-array, if present
-      const indexIn = connection.programsIncluded.indexOf(parseInt(String(programId), 10));
+      const indexIn = connection.programsIncluded.indexOf(
+        parseInt(String(programId), 10),
+      );
       if (indexIn > -1) {
         connection.programsIncluded.splice(indexIn, 1);
       }
       await this.connectionRepository.save(connection);
     }
-
   }
 
   private createQuestionAnswerList(
@@ -528,8 +546,8 @@ export class ProgramService {
   }
 
   private getPersitentDataFromProof(
-    customData: Object,
-    questionAnswerList: Object,
+    customData: Record<string, any>,
+    questionAnswerList: Record<string, any>,
     programCriteria: CustomCriterium[],
   ): any {
     for (let criterium of programCriteria) {
@@ -546,16 +564,26 @@ export class ProgramService {
     return includedConnections.length;
   }
 
-  public async getEnrolled(programId: number, privacy: boolean): Promise<any[]> {
-    const enrolledConnections = await this.getEnrolledConnections(programId, privacy);
+  public async getEnrolled(
+    programId: number,
+    privacy: boolean,
+  ): Promise<any[]> {
+    const enrolledConnections = await this.getEnrolledConnections(
+      programId,
+      privacy,
+    );
     return enrolledConnections;
   }
 
-  public async payout(programId: number, installment: number, amount: number) {
+  public async payout(
+    programId: number,
+    installment: number,
+    amount: number,
+  ): Promise<any> {
     let program = await this.programRepository.findOne(programId, {
       relations: ['financialServiceProviders'],
     });
-    if (!program || !program.published) {
+    if (!program || program.state === 'design') {
       const errors = 'Program not found.';
       throw new HttpException({ errors }, 404);
     }
@@ -584,7 +612,7 @@ export class ProgramService {
         includedConnections,
         amount,
         program,
-        installment
+        installment,
       );
     }
     return { status: 'succes', message: 'Sent instructions to FSP' };
@@ -592,9 +620,11 @@ export class ProgramService {
 
   private async getEnrolledConnections(
     programId: number,
-    privacy: boolean
+    privacy: boolean,
   ): Promise<any[]> {
-    const connections = await this.connectionRepository.find({ order: { inclusionScore: "DESC" } });
+    const connections = await this.connectionRepository.find({
+      order: { inclusionScore: 'DESC' },
+    });
     const enrolledConnections = [];
     for (let connection of connections) {
       let connectionNew: any;
@@ -611,7 +641,7 @@ export class ProgramService {
             updated: connection.updated,
           };
           enrolledConnections.push(connectionNew);
-        };
+        }
       } else {
         if (
           connection.programsIncluded.includes(+programId) ||
@@ -624,11 +654,11 @@ export class ProgramService {
             updated: connection.updated,
             name: connection.customData['name'],
             dob: connection.customData['dob'],
-            included: connection.programsIncluded.includes(+programId)
+            included: connection.programsIncluded.includes(+programId),
           };
           enrolledConnections.push(connectionNew);
-        };
-      };
+        }
+      }
     }
     return enrolledConnections;
   }
@@ -653,8 +683,8 @@ export class ProgramService {
     includedConnections: ConnectionEntity[],
     amount: number,
     program: ProgramEntity,
-    installment: number
-  ) {
+    installment: number,
+  ): Promise<any> {
     const paymentList = [];
     const connectionsForFsp = [];
     for (let connection of includedConnections) {
@@ -689,8 +719,8 @@ export class ProgramService {
     connection: ConnectionEntity,
     fsp: FinancialServiceProviderEntity,
     program: ProgramEntity,
-    installment: number
-  ) {
+    installment: number,
+  ): any {
     const transaction = new TransactionEntity();
     transaction.amount = amount;
     transaction.created = new Date();
@@ -703,12 +733,13 @@ export class ProgramService {
     this.transactionRepository.save(transaction);
   }
 
-  public async getInstallments(programId: number) {
-    const installments = await this.transactionRepository.createQueryBuilder('transaction')
-      .select("transaction.amount, transaction.installment")
-      .addSelect("MIN(transaction.created)", "installmentDate")
-      .where("transaction.program.id = :programId", { programId: programId })
-      .groupBy("transaction.amount, transaction.installment")
+  public async getInstallments(programId: number): Promise<any> {
+    const installments = await this.transactionRepository
+      .createQueryBuilder('transaction')
+      .select('transaction.amount, transaction.installment')
+      .addSelect('MIN(transaction.created)', 'installmentDate')
+      .where('transaction.program.id = :programId', { programId: programId })
+      .groupBy('transaction.amount, transaction.installment')
       .getRawMany();
     return installments;
   }
@@ -729,9 +760,96 @@ export class ProgramService {
   }
 
   public async getFspById(id: number): Promise<FinancialServiceProviderEntity> {
-    const fsp = await this.financialServiceProviderRepository.findOne(
-      id, { relations: ["attributes"] }
-    );
+    const fsp = await this.financialServiceProviderRepository.findOne(id, {
+      relations: ['attributes'],
+    });
     return fsp;
+  }
+
+  public async getPaymentDetails(
+    programId: number,
+    installmentId: number,
+  ): Promise<any> {
+    let rawPaymentDetails = await this.getPaymentDetailsInstallment(
+      programId,
+      installmentId,
+    );
+
+    let installmentTime = 'completed';
+    if (rawPaymentDetails.length === 0) {
+      rawPaymentDetails = await this.getPaymentDetailsFuture(programId);
+      installmentTime = 'future';
+    }
+    const paymentDetails = [];
+    rawPaymentDetails.forEach(rawTransaction => {
+      let transaction = {
+        ...rawTransaction,
+        ...rawTransaction.connection_customData,
+      };
+      delete transaction['connection_customData'];
+      paymentDetails.push(transaction);
+    });
+
+    const response = {
+      fileName: `payment-details-${installmentTime}-installment-${programId}.csv`,
+      data: this.jsonToCsv(paymentDetails),
+    };
+
+    return response;
+  }
+
+  public async getPaymentDetailsInstallment(
+    programId: number,
+    installmentId: number,
+  ): Promise<any> {
+    return await this.transactionRepository
+      .createQueryBuilder('transaction')
+      .select([
+        'transaction.amount',
+        'transaction.installment',
+        'connection.phoneNumber',
+        'connection.customData',
+      ])
+      .leftJoin('transaction.connection', 'connection')
+      .where('transaction.program.id = :programId', { programId: programId })
+      .andWhere('transaction.installment = :installmentId', {
+        installmentId: installmentId,
+      })
+      .getRawMany();
+  }
+
+  public async getPaymentDetailsFuture(programId: number): Promise<any> {
+    const connections = await this.connectionRepository
+      .createQueryBuilder('connection')
+      .select([
+        'connection.phoneNumber',
+        'connection.customData',
+        'connection.programsIncluded',
+      ])
+      .getRawMany();
+    const rawPaymentDetails = [];
+    for (let connection of connections) {
+      if (connection.connection_programsIncluded.includes(+programId)) {
+        delete connection['connection_programsIncluded'];
+        rawPaymentDetails.push(connection);
+      }
+    }
+    return rawPaymentDetails;
+  }
+
+  public jsonToCsv(items: any): any {
+    if (items.length === 0) {
+      return '';
+    }
+    const replacer = (key, value): any => (value === null ? '' : value); // specify how you want to handle null values here
+    const header = Object.keys(items[0]);
+    let csv = items.map(row =>
+      header
+        .map(fieldName => JSON.stringify(row[fieldName], replacer))
+        .join(','),
+    );
+    csv.unshift(header.join(','));
+    csv = csv.join('\r\n');
+    return csv;
   }
 }

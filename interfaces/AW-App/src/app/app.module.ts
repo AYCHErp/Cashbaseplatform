@@ -15,6 +15,29 @@ import { TranslateModule, TranslateLoader } from '@ngx-translate/core';
 import { TranslateHttpLoader } from '@ngx-translate/http-loader';
 import { QRScanner } from '@ionic-native/qr-scanner/ngx';
 
+import { Injector, APP_INITIALIZER } from '@angular/core';
+import { TranslateService } from '@ngx-translate/core';
+import { LOCATION_INITIALIZED } from '@angular/common';
+
+export function appInitializerFactory(translate: TranslateService, injector: Injector) {
+
+  const langToSet = 'en';
+
+  return () => new Promise<any>((resolve: any) => {
+    const locationInitialized = injector.get(LOCATION_INITIALIZED, Promise.resolve(null));
+    locationInitialized.then(() => {
+      translate.setDefaultLang(langToSet);
+      translate.use(langToSet).subscribe(() => {
+        console.log(`Successfully initialized '${langToSet}' language.`);
+      }, (err) => {
+        console.log(`Problem with '${langToSet}' language initialization: `, err);
+      }, () => {
+        resolve(null);
+      });
+    });
+  });
+}
+
 export function HttpLoaderFactory(http: HttpClient) {
   return new TranslateHttpLoader(http, './assets/i18n/');
 }
@@ -46,7 +69,13 @@ export function HttpLoaderFactory(http: HttpClient) {
     StatusBar,
     SplashScreen,
     QRScanner,
-    { provide: RouteReuseStrategy, useClass: IonicRouteStrategy }
+    { provide: RouteReuseStrategy, useClass: IonicRouteStrategy },
+    {
+      provide: APP_INITIALIZER,
+      useFactory: appInitializerFactory,
+      deps: [TranslateService, Injector],
+      multi: true
+    }
   ],
   bootstrap: [AppComponent]
 })

@@ -11,9 +11,7 @@ import { VoiceController } from './voice.controller';
 import { AuthMiddlewareTwilio } from '../auth.middlewareTwilio';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([
-    TwilioMessageEntity
-  ])],
+  imports: [TypeOrmModule.forFeature([TwilioMessageEntity])],
   providers: [VoiceService],
   controllers: [VoiceController],
   exports: [VoiceService],
@@ -22,6 +20,6 @@ export class VoiceModule implements NestModule {
   public configure(consumer: MiddlewareConsumer): void {
     consumer
       .apply(AuthMiddlewareTwilio)
-      .forRoutes({ path: 'voice/status', method: RequestMethod.POST });
+      .forRoutes({ path: 'notifications/voice/status', method: RequestMethod.POST });
   }
 }
