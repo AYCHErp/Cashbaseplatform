@@ -52,7 +52,7 @@
     "slug": "^1.0.0",
     "tsc-watch": "^2.1.2",
     "twilio": "^3.36.0",
-    "typeorm": "^0.2.15",
+    "typeorm": "^0.2.25",
     "typescript": "^3.3.1"
   },
   "devDependencies": {
